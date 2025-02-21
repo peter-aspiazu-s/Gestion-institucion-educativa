@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id       Int    @id @default(autoincrement())
+  nombre   String @db.VarChar(100)
+  email    String @unique @db.VarChar(100)
+  password String @db.Text
+  rol      Rol
+
+  ProfesorMateria Profesor_Materia[]
+  Horarios        Horario[]
+  Estudiantes     Estudiante[]
+}
+
+model Materia {
+  id       Int    @id @default(autoincrement())
+  nombre   String @db.VarChar(100)
+
+  ProfesorMateria Profesor_Materia[]
+  Horarios        Horario[]
+  Notas           Nota[]
+  Estudiantes     Estudiante[]  // Relación con Estudiante
+}
+
+model Profesor_Materia {
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId Int
+  materia   Materia @relation(fields: [materiaId], references: [id], onDelete: Cascade)
+  materiaId Int
+
+  @@id([usuarioId, materiaId])
+}
+
+model Horario {
+  id         Int    @id @default(autoincrement())
+  usuario    Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId  Int
+  materia    Materia @relation(fields: [materiaId], references: [id], onDelete: Cascade)
+  materiaId  Int
+  dia        Dia
+  horaInicio DateTime
+  horaFin    DateTime
+
+  Estudiantes Estudiante[]
+}
+
+model Estudiante {
+  id         Int      @id @default(autoincrement())
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId Int
+  nombre     String   @db.VarChar(100)
+  email      String   @unique @db.VarChar(100)
+  materia    Materia  @relation(fields: [materiaId], references: [id], onDelete: Cascade)
+  materiaId  Int
+  horario    Horario? @relation(fields: [horarioId], references: [id], onDelete: SetNull)
+  horarioId  Int?
+
+  Notas Nota[]
+}
+
+model Nota {
+  id            Int      @id @default(autoincrement())
+  estudiante    Estudiante @relation(fields: [estudianteId], references: [id], onDelete: Cascade)
+  estudianteId  Int
+  materia       Materia @relation(fields: [materiaId], references: [id], onDelete: Cascade)
+  materiaId     Int
+  calificacion  Decimal   @db.Decimal(5,2)
+
+  HistorialNotas Historial_Nota[]
+}
+
+model Historial_Nota {
+  id                 Int      @id @default(autoincrement())
+  nota               Nota     @relation(fields: [notaId], references: [id], onDelete: Cascade)
+  notaId            Int
+  calificacionAnterior Decimal   @db.Decimal(5,2)
+  fechaModificacion DateTime @default(now())
+}
+
+enum Rol {
+  profesor
+  admin
+}
+
+enum Dia {
+  Lunes
+  Martes
+  Miercoles
+  Jueves
+  Viernes
+  Sabado
+  Domingo
+}
