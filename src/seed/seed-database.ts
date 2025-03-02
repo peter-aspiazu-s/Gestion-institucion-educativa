@@ -6,7 +6,7 @@ async function main() {
     await prisma.$transaction([
         prisma.historial_Nota.deleteMany(),
         prisma.nota.deleteMany(),
-        prisma.estudiante.deleteMany(),
+        prisma.estudiante_Materia.deleteMany(),
         prisma.horario.deleteMany(),
         prisma.profesor_Materia.deleteMany(),
         prisma.materia.deleteMany(),
@@ -14,141 +14,147 @@ async function main() {
     ]);
 
     // Insertar usuarios
+    const usuariosData = initialData.usuarios.map(({ nombre, email, password, rol }) => ({
+        nombre,
+        email,
+        password,
+        rol,
+    }));
+    
     await prisma.usuario.createMany({
-        data: initialData.usuarios.map(({ nombre, email, password, rol }) => ({
-            nombre,
-            email,
-            password,
-            rol
-        }))
+        data: usuariosData,
     });
+
+    // console.log({usuariosData});
 
     // Insertar materias
-    await prisma.materia.createMany({
-        data: initialData.materias.map(({ nombre }) => ({
-            nombre,
-        })),
-    });
-
-    // Obtener usuarios y materias creados
-    const usuarios = await prisma.usuario.findMany();
-    const materias = await prisma.materia.findMany();
-
-    // console.log("Usuarios:", usuarios);
-    // console.log("Materias:", materias);
-
-    // Obtener usuarios con rol profesor
-    const profesores = usuarios.filter(u => u.rol === "profesor");
-
-    // Obtener ids de usuarios y materias
-    const usuarioMap = Object.fromEntries(profesores.map(u => [u.email, u.id]));
-    const materiaMap = Object.fromEntries(materias.map(m => [m.nombre, m.id]));
-    // console.log({usuarioMap});
-    // console.log({materiaMap});
-
-    // Asignar una materia a cada profesor (cíclicamente)
-    const profesorMateriaData = profesores.map((profesor, index) => ({
-        usuarioId: profesor.id,
-        materiaId: materias[index % materias.length].id, // Asigna materias en ciclo
+    const materiasData = initialData.materias.map(({ nombre }) => ({
+        nombre,
     }));
 
-    // Insertar las relaciones en la tabla Profesor_Materia
-    await prisma.profesor_Materia.createMany({
-        data: profesorMateriaData,
+    await prisma.materia.createMany({
+        data: materiasData,
     });
 
-    // console.log("Materias asignadas a profesores:", profesorMateriaData);
+    // console.log({materiasData});
 
-    // Obtener las relaciones Profesor_Materia insertadas
-    const profesorMateria = await prisma.profesor_Materia.findMany();
-    // console.log(profesorMateria);
-
-    // Insertar horarios utilizando los ids correctos de Profesor_Materia
-    const horarioData = initialData.horarios.map(({ dia, horaInicio, horaFin }, index) => {
-        // Obtener un profesor-materia de los asignados (en ciclo)
-        const profesorMateriaEntry = profesorMateria[index % profesorMateria.length];
-        // console.log(profesorMateriaEntry);
-        return {
-            usuarioId: profesorMateriaEntry.usuarioId,
-            materiaId: profesorMateriaEntry.materiaId,
-            dia,
-            horaInicio,
-            horaFin,
-        };
+    // Obtener Usuarios con Rol profesor y estudiante.
+    // Obtener profesores
+    const profesores = await prisma.usuario.findMany({
+        where: { rol: "profesor" }, // Filtramos solo los profesores
+        select: { id: true, email: true, nombre: true },
     });
 
-    // Insertando horarios en db
+    // Obtener estudiantes
+    const estudiantes = await prisma.usuario.findMany({
+        where: { rol: "estudiante" }, // Filtramos solo los estudiantes
+        select: { id: true, email: true, nombre: true },
+    });
+
+    // console.log({profesores});
+    // console.log({estudiantes});
+
+    // Obtener materias
+    const materias = await prisma.materia.findMany({
+        select: { id: true, nombre: true },
+    });
+    
+    // console.log({materias});
+    
+
+    // Insertar horarios
+    const horariosData = initialData.horarios.map(({ dia, horaInicio, horaFin }, index) => {
+        const profesor = profesores[index % profesores.length]; // Se asigna un profesor de forma cíclica
+        const estudiante = estudiantes[index % estudiantes.length]; // Se asigna un estudiante de forma cíclica
+        const materia = materias[index % materias.length]; // Se asigna una materia de forma cíclica
+    
+        return [
+            {
+                usuarioId: profesor.id, // Horario para profesor
+                materiaId: materia.id,
+                dia,
+                horaInicio,
+                horaFin,
+            },
+            {
+                usuarioId: estudiante.id, // Horario para estudiante
+                materiaId: materia.id,
+                dia,
+                horaInicio,
+                horaFin,
+            }
+        ];
+    }).flat(); // Aplanamos el array para que quede en una sola lista
+
     await prisma.horario.createMany({
-        data: horarioData,
+        data: horariosData,
+    });
+    
+    // console.log({ horariosData });
+
+    // Insertar las materias a los profesores
+    const profesorMateriasData = materias.map((materia, index) => ({
+        usuarioId: profesores[index % profesores.length].id, // Asigna un profesor de forma cíclica
+        materiaId: materia.id, // Relacionar con el ID de la materia obtenida
+    }));
+    
+    await prisma.profesor_Materia.createMany({
+        data: profesorMateriasData,
+    });
+    
+    // console.log({ profesorMateriasData });
+
+    // Insertar las materias a los profesores
+    const estudianteMateriasData = materias.map((materia, index) => ({
+        usuarioId: estudiantes[index % estudiantes.length].id, // Asigna un profesor de forma cíclica
+        materiaId: materia.id, // Relacionar con el ID de la materia obtenida
+    }));
+    
+    await prisma.estudiante_Materia.createMany({
+        data: estudianteMateriasData,
     });
 
-    // console.log('Horarios insertados:', horarioData);
+    // console.log({ estudianteMateriasData });
 
-
-    // Obtener horarios insertados
-    const horarios = await prisma.horario.findMany();
-    //   console.log(horarios);
-
-
-    // Asignar los datos de los horarios a los estudiantes
-    const estudianteData = initialData.estudiantes.map((estudiante, index) => {
-        const horario = horarios[index]; // Asigna el horario en orden
-
-        return {
-            nombre: estudiante.nombre,
-            email: estudiante.email,
-            usuarioId: horario.usuarioId, // Profesor asignado
-            materiaId: horario.materiaId, // Materia asignada
-            horarioId: horario.id, // Horario correspondiente
-        };
-    });
-    // console.log(estudianteData);
-
-    // Insertar estudiantes
-    await prisma.estudiante.createMany({
-        data: estudianteData,
+    // Obtener relaciones estudiante-materia
+    const estudianteMateria = await prisma.estudiante_Materia.findMany({
+        select: { id: true, usuarioId: true, materiaId: true },
     });
 
-    // console.log('Estudiantes insertados:', estudianteData);
-
-    // Obtener estudiantes creados
-    const estudiantes = await prisma.estudiante.findMany();
-    //   console.log(estudiantes);
-
-    // Mapear IDs correctos de estudiantes y materias
-    const estudianteMap = Object.fromEntries(estudiantes.map(e => [e.email, { id: e.id, materiaId: e.materiaId }]));
-    // console.log(estudianteMap);
-
-    // Insertar notas
-    const notasData = initialData.notas.map(({ estudianteId, materiaId, calificacion }, index) => ({
-        estudianteId: estudiantes[index].id,
-        materiaId: estudiantes[index].materiaId,
+    // Insertar notas a estudiantes
+    const notasData = initialData.notas.map(({ calificacion }, index) => ({
+        estudianteMateriaId: estudianteMateria[index % estudianteMateria.length].id,
         calificacion,
     }));
-    // console.log(notasData);
 
     await prisma.nota.createMany({
         data: notasData,
     });
 
-    // Obtener notas creadas
-    const notas = await prisma.nota.findMany();
-    // console.log(notas);
+    // console.log({notasData});
 
-    // Insertar historial de notas
-    const historialNotasData = initialData.notas.flatMap((nota, index) =>
-        nota.historialNotas.map(({ calificacionAnterior, fechaModificacion }) => ({
-            notaId: notas[index].id, // Obtener el id real de la nota
+
+    // Obtener notas
+    const notas = await prisma.nota.findMany({
+        select: { id: true, estudianteMateriaId: true, calificacion: true }
+    });
+
+    console.log({ notas });
+
+    // Insertar el historial de notas
+    const historialNotasData = initialData.notas.flatMap((nota, index) => {
+        return nota.historialNotas?.map(({ calificacionAnterior, fechaModificacion }) => ({
+            notaId: notas[index % notas.length].id, // Asignación cíclica
             calificacionAnterior,
             fechaModificacion,
-        }))
-    );
-    // console.log(historialNotasData);
-    
+        })) || [];
+    });
+
     await prisma.historial_Nota.createMany({
         data: historialNotasData,
     });
 
+    console.log({historialNotasData});
 
     console.log('Seed ejecutado correctamente');
 }
